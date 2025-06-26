@@ -1,0 +1,22 @@
+syntax = "proto3";
+package tick;
+
+option go_package = "github.com/acom21/chart-streaming-service/service/stream/proto/tick;pb";
+
+message Tick {
+  string    symbol      = 1;
+  int64      ts          = 2;
+  int64     start_time  = 3;
+  int64     trade_id    = 4;
+  string   quantity    = 5;
+  string   price       = 6;
+}
+
+message StreamRequest {
+  repeated string symbols = 1;
+  string interval = 2;
+}
+
+service StreamingService {
+  rpc StreamTick(StreamRequest) returns (stream Tick);
+}

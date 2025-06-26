@@ -1,0 +1,18 @@
+log:
+  level: "debug"
+
+db:
+  host: "localhost"
+  port: 5432
+  user: "testuser"
+  password: "testpass"
+  dbname: "trade-charts"
+  sslmode: "disable"
+
+dialer:
+  handshake_timeout_ms: 5000
+  keepalive_seconds: 30
+
+app:
+  interval: 10s
+  base_url: "wss://stream.binance.com:9443/stream"
