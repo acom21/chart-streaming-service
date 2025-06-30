@@ -2,9 +2,12 @@ package aggregator
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/acom21/chart-streaming-service/service/storage"
+	pb "github.com/acom21/chart-streaming-service/service/stream/proto/tick/pb/tick"
+
 	"go.uber.org/zap"
 )
 
@@ -18,22 +21,33 @@ type Store interface {
 	StoreCandles(ctx context.Context, c storage.OHLC) error
 }
 
+type grpcSrv interface {
+	Broadcast(symbol string, tick *pb.Tick)
+}
+
 // Aggregator represents main service  struct.
 type Aggregator struct {
 	current  map[string]storage.OHLC
 	interval time.Duration
 	log      *zap.Logger
 	ts       TradeStreamer
+	GrpcSrv  grpcSrv
 	store    Store
 }
 
-func NewAggregator(interval time.Duration, ts TradeStreamer, store Store, log *zap.Logger) Aggregator {
+func NewAggregator(
+	interval time.Duration,
+	tradeStream TradeStreamer,
+	grpc grpcSrv,
+	store Store,
+	log *zap.Logger) Aggregator {
 	return Aggregator{
 		current:  make(map[string]storage.OHLC),
 		interval: interval,
-		log:      log,
-		ts:       ts,
+		GrpcSrv:  grpc,
+		ts:       tradeStream,
 		store:    store,
+		log:      log,
 	}
 }
 
@@ -54,6 +68,18 @@ func (a *Aggregator) Aggregate(ctx context.Context) {
 				a.log.Error("stream error", zap.Error(ev.Err))
 				continue
 			}
+
+			tick := &pb.Tick{
+				Symbol: ev.Trade.Symbol,
+				Ts:     ev.Trade.Timestamp.UnixMilli(),
+
+				TradeId:  ev.Trade.TradeID,
+				Quantity: fmt.Sprintf("%f", ev.Trade.Quantity),
+				Price:    ev.Trade.Price.String(),
+			}
+
+			a.GrpcSrv.Broadcast(ev.Trade.Symbol, tick)
+
 			a.createOHLC(ctx, *ev.Trade)
 
 		case now := <-ticker.C:

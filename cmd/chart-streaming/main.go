@@ -14,9 +14,8 @@ func main() {
 	cmd := &cli.Command{
 		Name:  "run",
 		Usage: "stream trades",
-		Flags: []cli.Flag{&cli.StringFlag{Name: "config", Value: "config.yaml"}},
 		Action: func(ctx context.Context, c *cli.Command) error {
-			return run(ctx, c.String("config"))
+			return run(ctx)
 		},
 	}
 

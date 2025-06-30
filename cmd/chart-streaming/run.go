@@ -3,59 +3,70 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/acom21/chart-streaming-service/pkg/config"
 	"github.com/acom21/chart-streaming-service/service/aggregator"
 	"github.com/acom21/chart-streaming-service/service/storage"
-	pb "github.com/acom21/chart-streaming-service/service/stream/proto/tick/pb/tick"
+	"github.com/acom21/chart-streaming-service/service/stream"
 	"github.com/acom21/chart-streaming-service/service/websocket"
+
+	pb "github.com/acom21/chart-streaming-service/service/stream/proto/tick/pb/tick"
+
 	ws "github.com/gorilla/websocket"
 	pgxdecimal "github.com/jackc/pgx-shopspring-decimal"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
-func run(ctx context.Context, filePath string) error {
-	cfg, err := config.NewConfig(filePath)
+func run(ctx context.Context) error {
+	cfg, err := config.NewConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	logger, err := initLogger(cfg.Log)
+	logger, err := initLogger(cfg.LogLevel)
 	if err != nil {
 		return fmt.Errorf("failed to init logger: %w", err)
 	}
 	defer logger.Sync()
 
-	conn, err := initPostgres(ctx, cfg.DB)
+	conn, err := initPostgres(ctx, cfg.DBURL)
 	if err != nil {
 		return fmt.Errorf("init db %w", err)
 	}
 
-	grepcSrv := grpc.NewServer()
+	subMgr := stream.NewSubManager()
+	grpcService := stream.NewGRPCServer(subMgr)
+	lis, _ := net.Listen("tcp", cfg.GRPC)
+	grpcSrv := grpc.NewServer()
 
-	pb.RegisterStreamingServiceServer(srv, &MyTickServer{})
+	pb.RegisterStreamingServiceServer(grpcSrv, grpcService)
+	go grpcSrv.Serve(lis)
+
+	reflection.Register(grpcSrv)
 
 	store := storage.NewStore(conn)
-	streamer := websocket.NewClient(
+	websocket := websocket.NewClient(
 		cfg.App.BaseURL,
 		ws.DefaultDialer,
 		logger,
 	)
 
-	aggr := aggregator.NewAggregator(cfg.App.Interval, streamer, store, logger)
+	aggr := aggregator.NewAggregator(cfg.App.Interval, websocket, grpcService, store, logger)
 
 	aggr.Aggregate(ctx)
 
 	return nil
 }
 
-func initLogger(cfg config.LogConfig) (*zap.Logger, error) {
+func initLogger(logLevel string) (*zap.Logger, error) {
 	var lvl zap.AtomicLevel
-	switch cfg.Level {
+	switch logLevel {
 	case "debug":
 		lvl = zap.NewAtomicLevelAt(zap.DebugLevel)
 	case "info":
@@ -78,12 +89,8 @@ func initLogger(cfg config.LogConfig) (*zap.Logger, error) {
 	return cfgZap.Build()
 }
 
-func initPostgres(ctx context.Context, dbCfg config.DBConfig) (*pgxpool.Pool, error) {
-	connStr := fmt.Sprintf(
-		"postgres://%s:%s@%s:%d/%s?sslmode=%s",
-		dbCfg.User, dbCfg.Password, dbCfg.Host, dbCfg.Port, dbCfg.DBName, dbCfg.SSLMode,
-	)
-	cfg, err := pgxpool.ParseConfig(connStr)
+func initPostgres(ctx context.Context, dbURL string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(dbURL)
 	if err != nil {
 		return nil, err
 	}

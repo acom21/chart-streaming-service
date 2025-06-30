@@ -1,58 +1,49 @@
 package stream
 
 import (
+	"slices"
 	"sync"
 
 	pb "github.com/acom21/chart-streaming-service/service/stream/proto/tick/pb/tick"
 )
 
-type Subscription struct {
-	Symbols map[string]struct{}
-	Ch      chan pb.Tick
-}
-
 type SubscriptionMgr struct {
 	mu   sync.RWMutex
-	subs map[*Subscription]struct{}
+	subs map[string][]chan *pb.Tick
 }
 
-func (m *SubscriptionMgr) Subscribe(symbols []string) *Subscription {
-	symMap := make(map[string]struct{}, len(symbols))
-	for _, s := range symbols {
-		symMap[s] = struct{}{}
+func NewSubManager() *SubscriptionMgr {
+	return &SubscriptionMgr{
+		subs: make(map[string][]chan *pb.Tick),
 	}
+}
 
-	sub := &Subscription{
-		Symbols: symMap,
-		Ch:      make(chan pb.Tick),
+func (m *SubscriptionMgr) Subscribe(symbol string, ch chan *pb.Tick) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.subs[symbol] = append(m.subs[symbol], ch)
+}
+
+func (m *SubscriptionMgr) Unsubscribe(symbol string, ch chan *pb.Tick) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	chs := m.subs[symbol]
+	for i, c := range chs {
+		if c == ch {
+			m.subs[symbol] = slices.Delete(chs, i, i+1)
+			break
+		}
 	}
-
-	m.mu.Lock()
-	m.subs[sub] = struct{}{}
-	m.mu.Unlock()
-
-	return sub
 }
 
-func (m *SubscriptionMgr) Unsubscribe(sub *Subscription) {
-	m.mu.Lock()
-	delete(m.subs, sub)
-	m.mu.Unlock()
-
-	close(sub.Ch)
-}
-
-func (m *SubscriptionMgr) Publish(t pb.Tick) {
+func (m *SubscriptionMgr) Broadcast(symbol string, tick *pb.Tick) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	for sub := range m.subs {
-		if _, ok := sub.Symbols[t.Symbol]; ok {
-			select {
-			case sub.Ch <- t:
-			default:
-
-			}
+	for _, ch := range m.subs[symbol] {
+		select {
+		case ch <- tick:
+		default:
 		}
+
 	}
 }

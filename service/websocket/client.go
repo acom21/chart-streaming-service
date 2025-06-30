@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/acom21/chart-streaming-service/service/aggregator"
+
 	"github.com/gorilla/websocket"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
@@ -41,6 +42,9 @@ func (c *Client) ConnectAndListen(ctx context.Context) <-chan aggregator.Event {
 		out <- aggregator.Event{
 			Err: fmt.Errorf("websocket dial err %w", err),
 		}
+
+		close(out)
+		
 		return out
 	}
 
@@ -53,6 +57,7 @@ func (c *Client) ConnectAndListen(ctx context.Context) <-chan aggregator.Event {
 			case <-ctx.Done():
 
 				c.Logger.Info("WebSocket closed")
+				
 				return
 			default:
 				_, msg, err := conn.ReadMessage()
