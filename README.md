@@ -4,7 +4,7 @@ Real-time streaming service that connects to Binance WebSocket API, aggregates t
 
 ##  Features
 
-- Connects to Binance aggregate trade WebSocket (`aggTrade`)
+- Connects to Binance aggregate trade WebSocket (`trade`)
 - Aggregates trades into OHLC candles per symbol and interval
 - Stores candles in PostgreSQL 
 - Streams ticks to clients over gRPC
