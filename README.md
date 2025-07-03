@@ -13,5 +13,5 @@ Real-time streaming service that connects to Binance WebSocket API, aggregates t
 git clone https://github.com/acom21/chart-streaming-service.git
 cd chart-streaming-service
 
-# Run PostgreSQL + migrations
+# Run service + PostgreSQL + migrations
 docker compose up --wait
